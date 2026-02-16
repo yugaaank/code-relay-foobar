@@ -40,9 +40,11 @@ export function AuthProvider({ children }) {
   };
 
   const register = async (username, email, password) => {
-    const response = await axios
-      .post(`${API_BASE}/auth/register`, { username, email, password })
-      .then((response) => console.log(response));
+    const response = await axios.post(`${API_BASE}/auth/register`, {
+      username,
+      email,
+      password,
+    });
     localStorage.setItem("nexus_token", response.data.token);
     setToken(response.data.token);
     setUser(response.data.user);

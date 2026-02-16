@@ -59,4 +59,4 @@ TaskItem.propTypes = {
   onToggle: PropTypes.func.isRequired,
 };
 
-export default { TaskItem };
+export default TaskItem;

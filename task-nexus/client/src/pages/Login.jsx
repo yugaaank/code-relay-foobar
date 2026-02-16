@@ -12,6 +12,7 @@ function Login() {
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
+    e.preventDefault();
     setError("");
     setLoading(true);
 
@@ -91,4 +92,4 @@ function Login() {
   );
 }
 
-export default { Login };
+export default Login;
