@@ -1,5 +1,6 @@
 {
   "version": 2,
+  "buildCommand": "npx prisma generate --schema=server/prisma/schema.prisma && cd client && npm install && npm run build",
   "env": {
     "NODE_ENV": "production"
   },
@@ -8,6 +9,7 @@
       "src": "api/index.js",
       "use": "@vercel/node",
       "config": {
+        "buildCommand": "npx prisma generate --schema=server/prisma/schema.prisma",
         "includeFiles": [
           "server/**",
           "node_modules/.prisma/**",
