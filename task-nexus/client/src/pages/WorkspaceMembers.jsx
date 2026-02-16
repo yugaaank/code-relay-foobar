@@ -13,7 +13,7 @@ import {
   X,
 } from "lucide-react";
 
-const API_BASE = "http://localhost:5000/api";
+const API_BASE = import.meta.env.API_URL || "http://localhost:5000";
 
 export default function WorkspaceMembers() {
   const { workspaceId } = useParams();
@@ -55,8 +55,8 @@ export default function WorkspaceMembers() {
 
     try {
       const [wsRes, membersRes] = await Promise.all([
-        axios.get(`${API_BASE}/workspaces/${workspaceId}`, { headers }),
-        axios.get(`${API_BASE}/workspaces/${workspaceId}/members`, { headers }),
+        axios.get(`${API_BASE}/api/workspaces/${workspaceId}`, { headers }),
+        axios.get(`${API_BASE}/api/workspaces/${workspaceId}/members`, { headers }),
       ]);
       setWorkspace(wsRes.data);
       setMembers(membersRes.data);
@@ -83,7 +83,7 @@ export default function WorkspaceMembers() {
 
     try {
       const response = await axios.get(
-        `${API_BASE}/users/search?email=${encodeURIComponent(searchEmail)}`,
+        `${API_BASE}/api/users/search?email=${encodeURIComponent(searchEmail)}`,
         { headers: { Authorization: `Bearer ${token}` } },
       );
 
@@ -121,7 +121,7 @@ export default function WorkspaceMembers() {
 
     try {
       await axios.post(
-        `${API_BASE}/workspaces/${workspaceId}/invite`,
+        `${API_BASE}/api/workspaces/${workspaceId}/invite`,
         { email },
         { headers: { Authorization: `Bearer ${token}` } },
       );

@@ -13,7 +13,7 @@ import {
   ListTodo,
 } from "lucide-react";
 
-const API_BASE = "http://localhost:5000/api";
+const API_BASE = import.meta.env.API_URL || "http://localhost:5000";
 const STATUSES = ["todo", "in_progress", "review", "done"];
 const statusLabels = {
   todo: "To Do",
@@ -52,8 +52,8 @@ export default function Tasks() {
     const headers = { Authorization: `Bearer ${token}` };
 
     Promise.all([
-      axios.get(`${API_BASE}/projects/${projectId}`, { headers }),
-      axios.get(`${API_BASE}/tasks?projectId=${projectId}`, { headers }),
+      axios.get(`${API_BASE}/api/projects/${projectId}`, { headers }),
+      axios.get(`${API_BASE}/api/tasks?projectId=${projectId}`, { headers }),
     ])
       .then(([projRes, taskRes]) => {
         setProject(projRes.data);
@@ -69,7 +69,7 @@ export default function Tasks() {
 
     try {
       const response = await axios.post(
-        `${API_BASE}/tasks`,
+        `${API_BASE}/api/tasks`,
         {
           title,
           description,
@@ -93,7 +93,7 @@ export default function Tasks() {
     const token = localStorage.getItem("nexus_token");
     try {
       await axios.put(
-        `${API_BASE}/tasks/${taskId}`,
+        `${API_BASE}/api/tasks/${taskId}`,
         {
           status: newStatus,
           completed: newStatus === "done",
@@ -116,7 +116,7 @@ export default function Tasks() {
   const handleDelete = async (id) => {
     const token = localStorage.getItem("nexus_token");
     try {
-      await axios.delete(`${API_BASE}/tasks/${id}`, {
+      await axios.delete(`${API_BASE}/api/tasks/${id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setTasks(tasks.filter((t) => t.id !== id));

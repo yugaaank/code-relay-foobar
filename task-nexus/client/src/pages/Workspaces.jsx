@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import { Building2, Plus, Users, Trash2, ChevronRight } from "lucide-react";
 
-const API_BASE = "http://localhost:5000/api";
+const API_BASE = import.meta.env.API_URL || "http://localhost:5000";
 
 export default function Workspaces() {
   const [workspaces, setWorkspaces] = useState([]);
@@ -16,7 +16,7 @@ export default function Workspaces() {
   useEffect(() => {
     const token = localStorage.getItem("nexus_token");
     axios
-      .get(`${API_BASE}/workspaces`, {
+      .get(`${API_BASE}/api/workspaces`, {
         headers: { Authorization: `Bearer ${token}` },
       })
       .then((response) => setWorkspaces(response.data))
@@ -31,7 +31,7 @@ export default function Workspaces() {
 
     try {
       const response = await axios.post(
-        `${API_BASE}/workspaces`,
+        `${API_BASE}/api/workspaces`,
         { name, description },
         {
           headers: { Authorization: `Bearer ${token}` },
@@ -49,7 +49,7 @@ export default function Workspaces() {
   const handleDelete = async (id) => {
     const token = localStorage.getItem("nexus_token");
     try {
-      await axios.delete(`${API_BASE}/workspaces/${id}`, {
+      await axios.delete(`${API_BASE}/api/workspaces/${id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setWorkspaces(workspaces.filter((w) => w.id !== id));

@@ -11,7 +11,7 @@ import {
 
 import StatusPieChart from "../components/charts/StatusPieChart";
 import WeeklyCompletionChart from "../components/charts/WeeklyCompletionChart";
-const API_BASE = import.meta.env.API_URL || "http://localhost:5000/api";
+const API_BASE = import.meta.env.API_URL || "http://localhost:5000";
 
 export default function Dashboard() {
   const [stats, setStats] = useState(null);
@@ -20,7 +20,7 @@ export default function Dashboard() {
   useEffect(() => {
     const token = localStorage.getItem("nexus_token");
     axios
-      .get(`${API_BASE}/analytics/dashboard`, {
+      .get(`${API_BASE}/api/analytics/dashboard`, {
         headers: { Authorization: `Bearer ${token}` },
       })
       .then((response) => setStats(response.data))

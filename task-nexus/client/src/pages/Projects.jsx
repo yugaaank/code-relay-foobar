@@ -10,7 +10,7 @@ import {
   Users,
 } from "lucide-react";
 
-const API_BASE = "http://localhost:5000/api";
+const API_BASE = import.meta.env.API_URL || "http://localhost:5000";
 
 export default function Projects() {
   const { workspaceId } = useParams();
@@ -28,8 +28,8 @@ export default function Projects() {
     const headers = { Authorization: `Bearer ${token}` };
 
     Promise.all([
-      axios.get(`${API_BASE}/workspaces/${workspaceId}`, { headers }),
-      axios.get(`${API_BASE}/projects/workspace/${workspaceId}`, { headers }),
+      axios.get(`${API_BASE}/api/workspaces/${workspaceId}`, { headers }),
+      axios.get(`${API_BASE}/api/projects/workspace/${workspaceId}`, { headers }),
     ])
       .then(([wsRes, projRes]) => {
         setWorkspace(wsRes.data);
@@ -45,7 +45,7 @@ export default function Projects() {
 
     try {
       const response = await axios.post(
-        `${API_BASE}/projects`,
+        `${API_BASE}/api/projects`,
         { name, description, color, workspaceId: parseInt(workspaceId) },
         {
           headers: { Authorization: `Bearer ${token}` },
@@ -63,7 +63,7 @@ export default function Projects() {
   const handleDelete = async (id) => {
     const token = localStorage.getItem("nexus_token");
     try {
-      await axios.delete(`${API_BASE}/projects/${id}`, {
+      await axios.delete(`${API_BASE}/api/projects/${id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setProjects(projects.filter((p) => p.id !== id));
