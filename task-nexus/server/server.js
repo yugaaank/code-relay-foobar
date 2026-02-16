@@ -16,7 +16,16 @@ app.use(
     origin: (origin, callback) => {
       // Allow requests with no origin (mobile apps, curl)
       if (!origin) return callback(null, true);
+
+      // Check if origin is allowed
       if (allowedOrigins.includes(origin)) return callback(null, true);
+
+      // In development, allow all localhost origins
+      if (process.env.NODE_ENV !== "production" && origin.includes("localhost")) {
+        return callback(null, true);
+      }
+
+      console.error("CORS Blocked:", origin);
       return callback(new Error("Not allowed by CORS"));
     },
     credentials: true,
@@ -25,7 +34,17 @@ app.use(
 app.use(express.json());
 
 const JWT_SECRET = process.env.JWT_SECRET || "super-secret-key-123";
-const prisma = new PrismaClient();
+// Prisma Client Singleton for Serverless/Hot-Reload
+let prisma;
+
+if (process.env.NODE_ENV === "production") {
+  prisma = new PrismaClient();
+} else {
+  if (!global.prisma) {
+    global.prisma = new PrismaClient();
+  }
+  prisma = global.prisma;
+}
 
 const getUserFromAuth = (req) => {
   const authHeader = req.headers.authorization;
@@ -500,7 +519,11 @@ app.get("/api/analytics/dashboard", async (req, res) => {
   }
 });
 
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`Nexus stability layer active on port ${PORT} with Prisma.`);
-});
+if (require.main === module) {
+  const PORT = process.env.PORT || 5000;
+  app.listen(PORT, () => {
+    console.log(`Nexus stability layer active on port ${PORT} with Prisma.`);
+  });
+}
+
+module.exports = app;
