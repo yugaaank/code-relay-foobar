@@ -10,7 +10,7 @@ const jwt = require("jsonwebtoken");
 const app = express();
 app.use(
   cors({
-    origin: "http://localhost:3000",
+    origin: "https://code-relay-foobar.vercel.app",
     credentials: true,
   }),
 );
