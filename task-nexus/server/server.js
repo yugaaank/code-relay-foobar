@@ -47,7 +47,14 @@ app.use((req, res, next) => {
 const JWT_SECRET = process.env.JWT_SECRET || "super-secret-key-123";
 
 // Simple, improved Prisma Client instantiation for Vercel Serverless
-const prisma = new PrismaClient();
+const globalForPrisma = global;
+
+const prisma =
+  globalForPrisma.prisma ||
+  new PrismaClient();
+
+if (process.env.NODE_ENV !== "production")
+  globalForPrisma.prisma = prisma;
 
 const getUserFromAuth = (req) => {
   const authHeader = req.headers.authorization;
