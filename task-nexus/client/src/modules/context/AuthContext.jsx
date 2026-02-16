@@ -17,7 +17,7 @@ export function AuthProvider({ children }) {
           headers: { Authorization: `Bearer ${token}` },
         })
         .then((response) => {
-          setUser(response);
+          setUser(response.data);
         })
         .catch(() => {
           setUser(null);
@@ -52,7 +52,7 @@ export function AuthProvider({ children }) {
   };
 
   const logout = () => {
-    localStorage.removeItem("token");
+    localStorage.removeItem("nexus_token");
     setToken(null);
     setUser(null);
   };

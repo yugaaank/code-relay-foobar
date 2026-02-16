@@ -20,7 +20,7 @@ function Login() {
       await login(email, password);
       navigate("/");
     } catch (err) {
-      setError(err.data?.error || "Login failed");
+      setError(err.response?.data?.error || "Login failed");
     } finally {
       setLoading(false);
     }

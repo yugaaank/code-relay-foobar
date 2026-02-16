@@ -26,7 +26,9 @@ function ProtectedRoute({ children }) {
         <div className="spinner"></div>
       </div>
     );
-  if (!user) return null;
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
   return children;
 }
 
@@ -41,7 +43,7 @@ function LegacyTaskApp() {
   const fetchTasks = async () => {
     try {
       const response = await axios.get(`${API_BASE}/api/tasks`);
-      setQuantumTasks(response);
+      setQuantumTasks(response.data);
     } catch (error) {
       console.error("Nexus communication failure", error);
     }
