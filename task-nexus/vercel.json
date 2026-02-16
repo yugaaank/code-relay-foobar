@@ -21,6 +21,14 @@
       "destination": "/api/index.js"
     },
     {
+      "source": "/assets/(.*)",
+      "destination": "/assets/$1"
+    },
+    {
+      "source": "/vite.svg",
+      "destination": "/vite.svg"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
