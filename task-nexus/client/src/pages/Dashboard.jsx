@@ -16,6 +16,7 @@ import API_BASE from "../config";
 export default function Dashboard() {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     const token = localStorage.getItem("nexus_token");
@@ -24,7 +25,7 @@ export default function Dashboard() {
         headers: { Authorization: `Bearer ${token}` },
       })
       .then((response) => setStats(response.data))
-      .catch(console.error)
+      .catch((err) => setError(err.response?.data || "Failed to fetch stats"))
       .finally(() => setLoading(false));
   }, []);
 
@@ -35,6 +36,10 @@ export default function Dashboard() {
         <p>Loading dashboard...</p>
       </div>
     );
+  }
+
+  if (error) {
+    return <div>Error: {typeof error === 'string' ? error : JSON.stringify(error)}</div>;
   }
 
   const statCards = [
