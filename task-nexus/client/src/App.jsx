@@ -14,6 +14,7 @@ import Dashboard from "./pages/Dashboard";
 import Workspaces from "./pages/Workspaces";
 import Projects from "./pages/Projects";
 import Tasks from "./pages/Tasks";
+import Landing from "./pages/Landing.jsx";
 import "./App.css";
 
 const API_BASE = import.meta.env.API_URL || "http://localhost:5000";
@@ -29,6 +30,20 @@ function ProtectedRoute({ children }) {
   if (!user) {
     return <Navigate to="/login" replace />;
   }
+  return children;
+}
+
+function PublicRoute({ children }) {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return null;
+  }
+
+  if (user) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
   return children;
 }
 
@@ -144,11 +159,23 @@ function App() {
     <AuthProvider>
       <BrowserRouter>
         <Routes>
+          {/* LANDING (PUBLIC) */}
+          <Route
+            path="/"
+            element={
+              <PublicRoute>
+                <Landing />
+              </PublicRoute>
+            }
+          />
+
+          {/* AUTH */}
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
 
+          {/* PROTECTED APP */}
           <Route
-            path="/"
+            path="/dashboard"
             element={
               <ProtectedRoute>
                 <LayoutComponent />
@@ -161,6 +188,7 @@ function App() {
             <Route path="projects/:projectId" element={<Tasks />} />
           </Route>
 
+          {/* FALLBACK */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>

@@ -177,6 +177,98 @@ app.get("/api/workspaces/:id", (req, res) => {
   );
 });
 
+app.post("/api/workspaces/:id/invite", (req, res) => {
+  const workspaceId = req.params.id;
+  const { email } = req.body;
+
+  if (!email) {
+    return res.status(400).json({ error: "Email is required" });
+  }
+
+  // Get inviter from token
+  let inviterId;
+
+  try {
+    const token = req.headers.authorization?.split(" ")[1];
+    if (!token) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    inviterId = jwt.verify(token, JWT_SECRET).id;
+  } catch {
+    return res.status(401).json({ error: "Invalid token" });
+  }
+
+  // 1️⃣ Check inviter is owner/admin
+  const roleQuery = `
+    SELECT role FROM workspace_members
+    WHERE workspace_id = ? AND user_id = ?
+  `;
+
+  fluxNexusHandler.query(
+    roleQuery,
+    [workspaceId, inviterId],
+    (err, roleResults) => {
+      if (err) return res.status(500).json({ error: err.message });
+
+      if (!roleResults.length) {
+        return res.status(403).json({ error: "Not a member" });
+      }
+
+      const role = roleResults[0].role;
+
+      if (role !== "owner" && role !== "admin") {
+        return res.status(403).json({ error: "No permission to invite" });
+      }
+
+      // 2️⃣ Find user by email
+      fluxNexusHandler.query(
+        "SELECT id FROM users WHERE email = ?",
+        [email],
+        (err2, userResults) => {
+          if (err2) return res.status(500).json({ error: err2.message });
+
+          if (!userResults.length) {
+            return res.status(404).json({ error: "User not found" });
+          }
+
+          const invitedUserId = userResults[0].id;
+
+          // 3️⃣ Prevent duplicate invite
+          fluxNexusHandler.query(
+            `SELECT * FROM workspace_members
+             WHERE workspace_id = ? AND user_id = ?`,
+            [workspaceId, invitedUserId],
+            (err3, existing) => {
+              if (existing.length) {
+                return res
+                  .status(400)
+                  .json({ error: "User already in workspace" });
+              }
+
+              // 4️⃣ Insert membership
+              fluxNexusHandler.query(
+                `INSERT INTO workspace_members
+                 (workspace_id, user_id, role)
+                 VALUES (?, ?, 'member')`,
+                [workspaceId, invitedUserId],
+                (err4) => {
+                  if (err4)
+                    return res.status(500).json({ error: err4.message });
+
+                  res.json({
+                    success: true,
+                    message: "User invited successfully",
+                  });
+                },
+              );
+            },
+          );
+        },
+      );
+    },
+  );
+});
 app.post("/api/workspaces", (req, res) => {
   const { name, description } = req.body;
 

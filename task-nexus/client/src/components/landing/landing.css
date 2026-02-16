@@ -1,0 +1,66 @@
+.landing-page {
+  background: hsl(var(--bg));
+  color: hsl(var(--text));
+}
+
+/* HERO */
+
+.hero {
+  min-height: 90vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 2rem;
+}
+
+.hero h1 {
+  font-size: 3rem;
+  font-weight: 800;
+  margin-bottom: 1rem;
+}
+
+.hero p {
+  color: hsl(var(--text-muted));
+  max-width: 600px;
+  margin: 0 auto 2rem;
+}
+
+.hero-actions {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+}
+
+/* FEATURES */
+
+.features {
+  padding: 4rem 2rem;
+  text-align: center;
+}
+
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1.5rem;
+  margin-top: 2rem;
+}
+
+.feature-card {
+  padding: 1.5rem;
+}
+
+/* CTA */
+
+.cta {
+  padding: 4rem 2rem;
+  text-align: center;
+}
+
+/* FOOTER */
+
+.landing-footer {
+  text-align: center;
+  padding: 2rem;
+  color: hsl(var(--text-muted));
+}

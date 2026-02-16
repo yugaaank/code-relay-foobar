@@ -114,7 +114,7 @@ export default function Workspaces() {
           <div
             key={ws.id}
             className="workspace-card glass"
-            onClick={() => navigate(`/workspaces/${ws.id}`)}
+            onClick={() => navigate(`/dashboard/workspaces/${ws.id}`)}
           >
             <div className="workspace-card-header">
               <div className="workspace-icon">
