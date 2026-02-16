@@ -10,7 +10,7 @@ import {
   Users,
 } from "lucide-react";
 
-const API_BASE = import.meta.env.VITE_API_URL || "https://your-cloud-api.example.com";
+import API_BASE from "../config";
 
 export default function Projects() {
   const { workspaceId } = useParams();

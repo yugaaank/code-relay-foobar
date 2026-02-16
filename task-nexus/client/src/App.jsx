@@ -18,7 +18,7 @@ import Landing from "./pages/Landing.jsx";
 import WorkspaceMembers from "./pages/WorkspaceMembers";
 import "./App.css";
 
-const API_BASE = import.meta.env.VITE_API_URL || "https://your-cloud-api.example.com";
+import API_BASE from "./config";
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();

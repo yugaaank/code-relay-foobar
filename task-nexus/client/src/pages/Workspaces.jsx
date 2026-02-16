@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import { Building2, Plus, Users, Trash2, ChevronRight } from "lucide-react";
 
-const API_BASE = import.meta.env.VITE_API_URL || "https://your-cloud-api.example.com";
+import API_BASE from "../config";
 
 export default function Workspaces() {
   const [workspaces, setWorkspaces] = useState([]);

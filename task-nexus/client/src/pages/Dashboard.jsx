@@ -11,7 +11,7 @@ import {
 
 import StatusPieChart from "../components/charts/StatusPieChart";
 import WeeklyCompletionChart from "../components/charts/WeeklyCompletionChart";
-const API_BASE = import.meta.env.VITE_API_URL || "https://your-cloud-api.example.com";
+import API_BASE from "../config";
 
 export default function Dashboard() {
   const [stats, setStats] = useState(null);
