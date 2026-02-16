@@ -15,6 +15,7 @@ import Workspaces from "./pages/Workspaces";
 import Projects from "./pages/Projects";
 import Tasks from "./pages/Tasks";
 import Landing from "./pages/Landing.jsx";
+import WorkspaceMembers from "./pages/WorkspaceMembers";
 import "./App.css";
 
 const API_BASE = import.meta.env.API_URL || "http://localhost:5000";
@@ -185,6 +186,10 @@ function App() {
             <Route index element={<Dashboard />} />
             <Route path="workspaces" element={<Workspaces />} />
             <Route path="workspaces/:workspaceId" element={<Projects />} />
+            <Route
+              path="workspaces/:workspaceId/members"
+              element={<WorkspaceMembers />}
+            />
             <Route path="projects/:projectId" element={<Tasks />} />
           </Route>
 

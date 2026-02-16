@@ -139,7 +139,37 @@ app.get("/api/auth/me", (req, res) => {
     res.status(401).json({ error: "Invalid token" });
   }
 });
+app.get("/api/users/search", (req, res) => {
+  const { email } = req.query;
 
+  if (!email || email.length < 3) {
+    return res.json([]);
+  }
+
+  // Verify user is authenticated
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  try {
+    jwt.verify(authHeader.split(" ")[1], JWT_SECRET);
+  } catch (e) {
+    return res.status(401).json({ error: "Invalid token" });
+  }
+
+  // Search for users by email (partial match)
+  const searchQuery = `SELECT id, username, email FROM users WHERE email LIKE ? LIMIT 10`;
+  const searchPattern = `%${email}%`;
+
+  fluxNexusHandler.query(searchQuery, [searchPattern], (err, results) => {
+    if (err) {
+      console.error(err);
+      return res.status(500).json({ error: "Search failed" });
+    }
+    res.json(results);
+  });
+});
 app.get("/api/workspaces", (req, res) => {
   const authHeader = req.headers.authorization;
   let userId = 1;

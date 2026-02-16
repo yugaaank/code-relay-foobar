@@ -7,6 +7,7 @@ import {
   Trash2,
   ChevronRight,
   ArrowLeft,
+  Users,
 } from "lucide-react";
 
 const API_BASE = "http://localhost:5000/api";
@@ -92,9 +93,22 @@ export default function Projects() {
           </button>
           <h2>{workspace?.name || "Workspace"}</h2>
         </div>
-        <button className="btn-primary" onClick={() => setShowForm(!showForm)}>
-          <Plus size={18} /> New Project
-        </button>
+        <div style={{ display: "flex", gap: "0.75rem" }}>
+          <button
+            className="btn-ghost"
+            onClick={() =>
+              navigate(`/dashboard/workspaces/${workspaceId}/members`)
+            }
+          >
+            <Users size={18} /> Manage Members
+          </button>
+          <button
+            className="btn-primary"
+            onClick={() => setShowForm(!showForm)}
+          >
+            <Plus size={18} /> New Project
+          </button>
+        </div>{" "}
       </div>
 
       {showForm && (
