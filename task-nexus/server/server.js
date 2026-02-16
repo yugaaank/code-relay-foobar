@@ -45,17 +45,9 @@ app.use((req, res, next) => {
 });
 
 const JWT_SECRET = process.env.JWT_SECRET || "super-secret-key-123";
-// Prisma Client Singleton for Serverless/Hot-Reload
-let prisma;
 
-if (process.env.NODE_ENV === "production") {
-  prisma = new PrismaClient();
-} else {
-  if (!global.prisma) {
-    global.prisma = new PrismaClient();
-  }
-  prisma = global.prisma;
-}
+// Simple, improved Prisma Client instantiation for Vercel Serverless
+const prisma = new PrismaClient();
 
 const getUserFromAuth = (req) => {
   const authHeader = req.headers.authorization;
