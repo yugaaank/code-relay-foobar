@@ -37,6 +37,12 @@ app.use(
 );
 app.use(express.json());
 
+// Request logger for debugging
+app.use((req, res, next) => {
+  console.log(`[Request] ${req.method} ${req.url}`);
+  next();
+});
+
 const JWT_SECRET = process.env.JWT_SECRET || "super-secret-key-123";
 // Prisma Client Singleton for Serverless/Hot-Reload
 let prisma;
@@ -521,6 +527,17 @@ app.get("/api/analytics/dashboard", async (req, res) => {
     console.error(error);
     res.status(500).json({ error: "Analytics failed" });
   }
+});
+
+// Catch-all 404 handler for debugging
+app.use((req, res) => {
+  console.log(`[404] Route not found: ${req.method} ${req.url}`);
+  res.status(404).json({
+    error: "Not Found",
+    method: req.method,
+    url: req.url,
+    message: "Route not matched in Express"
+  });
 });
 
 if (require.main === module) {
