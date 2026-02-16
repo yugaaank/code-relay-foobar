@@ -14,14 +14,18 @@ const allowedOrigins = [
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow requests with no origin (mobile apps, curl)
+      // Allow requests with no origin (mobile apps, curl, etc.)
       if (!origin) return callback(null, true);
 
-      // Check if origin is allowed
-      if (allowedOrigins.includes(origin)) return callback(null, true);
+      const isLocal = origin.includes("localhost") || origin.includes("127.0.0.1");
 
-      // In development, allow all localhost origins
-      if (process.env.NODE_ENV !== "production" && origin.includes("localhost")) {
+      // In development or if purely local, allow it
+      if (process.env.NODE_ENV !== "production" || isLocal) {
+        return callback(null, true);
+      }
+
+      // Check allowed origins for production
+      if (allowedOrigins.includes(origin)) {
         return callback(null, true);
       }
 
