@@ -13,7 +13,7 @@ import {
   ListTodo,
 } from "lucide-react";
 
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5000";
+const API_BASE = import.meta.env.VITE_API_URL || "https://your-cloud-api.example.com";
 const STATUSES = ["todo", "in_progress", "review", "done"];
 const statusLabels = {
   todo: "To Do",

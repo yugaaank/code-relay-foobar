@@ -1,106 +1,96 @@
 require("dotenv").config();
 const cors = require("cors");
-
 const express = require("express");
-
-const mysql = require("mysql2");
-
 const jwt = require("jsonwebtoken");
+const { PrismaClient } = require("@prisma/client");
 
 const app = express();
+const allowedOrigins = [
+  process.env.FRONTEND_ORIGIN,
+  "http://localhost:3000",
+  "http://localhost:5173",
+].filter(Boolean);
+
 app.use(
   cors({
-    origin: "https://code-relay-foobar.vercel.app",
+    origin: (origin, callback) => {
+      // Allow requests with no origin (mobile apps, curl)
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes(origin)) return callback(null, true);
+      return callback(new Error("Not allowed by CORS"));
+    },
     credentials: true,
   }),
 );
 app.use(express.json());
 
-const JWT_SECRET = "super-secret-key-123";
+const JWT_SECRET = process.env.JWT_SECRET || "super-secret-key-123";
+const prisma = new PrismaClient();
 
-const fluxNexusHandler = mysql.createConnection({
-  host: process.env.DB_HOST,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME,
-  connectTimeout: 30000
-});
-
-fluxNexusHandler.connect((err) => {
-  if (err) {
-    console.error("Error connecting to taskNexus:", err);
-    return;
+const getUserFromAuth = (req) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return null;
+  try {
+    const token = authHeader.split(" ")[1];
+    return jwt.verify(token, JWT_SECRET);
+  } catch (e) {
+    return null;
   }
-  console.log("Successfully connected to taskNexus stability layer.");
-});
+};
 
-app.post("/api/auth/register", (req, res) => {
+app.post("/api/auth/register", async (req, res) => {
   const { username, email, password } = req.body;
 
-  const query =
-    "INSERT INTO users (username, email, password_hash) VALUES ('" +
-    username +
-    "', '" +
-    email +
-    "', '" +
-    password +
-    "')";
-
-  fluxNexusHandler.query(query, (err, results) => {
-    if (err) {
-      return res.status(500).json({ error: err.message });
-    }
-
-    const wsQuery =
-      "INSERT INTO workspaces (name, description, owner_id) VALUES ('" +
-      username +
-      " Workspace', 'Default workspace', " +
-      results.insertId +
-      ")";
-    fluxNexusHandler.query(wsQuery, (err2, wsResults) => {
-      if (wsResults) {
-        fluxNexusHandler.query(
-          "INSERT INTO workspace_members (workspace_id, user_id, role) VALUES (" +
-            wsResults.insertId +
-            ", " +
-            results.insertId +
-            ", 'owner')",
-        );
-
-        fluxNexusHandler.query(
-          "INSERT INTO projects (name, description, workspace_id) VALUES ('My First Project', 'Default project', " +
-            wsResults.insertId +
-            ")",
-        );
-      }
-
-      const token = jwt.sign(
-        { id: results.insertId, username, email },
-        JWT_SECRET,
-      );
-
-      res.json({ token, user: { id: results.insertId, username, email } });
+  try {
+    // Avoid long-lived interactive transactions for Data Proxy;
+    // perform sequential creates instead.
+    const user = await prisma.user.create({
+      data: { username, email, password_hash: password },
     });
-  });
+
+    const workspace = await prisma.workspace.create({
+      data: {
+        name: `${username} Workspace`,
+        description: "Default workspace",
+        owner_id: user.id,
+      },
+    });
+
+    await prisma.workspaceMember.create({
+      data: {
+        workspace_id: workspace.id,
+        user_id: user.id,
+        role: "owner",
+      },
+    });
+
+    await prisma.project.create({
+      data: {
+        name: "My First Project",
+        description: "Default project",
+        workspace_id: workspace.id,
+      },
+    });
+
+    const token = jwt.sign({ id: user.id, username, email }, JWT_SECRET);
+    res.json({ token, user: { id: user.id, username, email } });
+  } catch (error) {
+    if (error.code === "P2002") {
+      return res.status(409).json({ error: "Username or email already exists" });
+    }
+    console.error("Registration failed:", error);
+    res.status(500).json({ error: "Registration failed", detail: error.message });
+  }
 });
 
-app.post("/api/auth/login", (req, res) => {
+app.post("/api/auth/login", async (req, res) => {
   const { email, password } = req.body;
 
-  const query = "SELECT * FROM users WHERE email = '" + email + "'";
-
-  fluxNexusHandler.query(query, (err, results) => {
-    if (err) {
-      return res.status(500).json({ error: err.message });
+  try {
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user) {
+      return res.status(401).json({ error: "No account found with this email" });
     }
-
-    if (results.length === 0) {
-      return res
-        .status(401)
-        .json({ error: "No account found with this email" });
-    }
-
-    var user = results[0];
 
     if (user.password_hash !== password) {
       return res.status(401).json({ error: "Wrong password" });
@@ -115,397 +105,292 @@ app.post("/api/auth/login", (req, res) => {
       token,
       user: { id: user.id, username: user.username, email: user.email },
     });
-  });
+  } catch (error) {
+    console.error("Login failed:", error);
+    res.status(500).json({ error: "Login failed", detail: error.message });
+  }
 });
 
-app.get("/api/auth/me", (req, res) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader) {
-    return res.status(401).json({ error: "No token" });
-  }
+app.get("/api/auth/me", async (req, res) => {
+  const decoded = getUserFromAuth(req);
+  if (!decoded) return res.status(401).json({ error: "No token" });
 
   try {
-    const token = authHeader.split(" ")[1];
-    const decoded = jwt.verify(token, JWT_SECRET);
-
-    fluxNexusHandler.query(
-      "SELECT id, username, email FROM users WHERE id = ?",
-      [decoded.id],
-      (err, results) => {
-        if (err) throw err;
-        res.json(results[0]);
-      },
-    );
+    const user = await prisma.user.findUnique({
+      where: { id: decoded.id },
+      select: { id: true, username: true, email: true },
+    });
+    res.json(user);
   } catch (error) {
     res.status(401).json({ error: "Invalid token" });
   }
 });
-app.get("/api/users/search", (req, res) => {
+
+app.get("/api/users/search", async (req, res) => {
   const { email } = req.query;
+  if (!email || email.length < 3) return res.json([]);
 
-  if (!email || email.length < 3) {
-    return res.json([]);
-  }
-
-  // Verify user is authenticated
-  const authHeader = req.headers.authorization;
-  if (!authHeader) {
-    return res.status(401).json({ error: "Unauthorized" });
-  }
+  if (!getUserFromAuth(req)) return res.status(401).json({ error: "Unauthorized" });
 
   try {
-    jwt.verify(authHeader.split(" ")[1], JWT_SECRET);
-  } catch (e) {
-    return res.status(401).json({ error: "Invalid token" });
-  }
-
-  // Search for users by email (partial match)
-  const searchQuery = `SELECT id, username, email FROM users WHERE email LIKE ? LIMIT 10`;
-  const searchPattern = `%${email}%`;
-
-  fluxNexusHandler.query(searchQuery, [searchPattern], (err, results) => {
-    if (err) {
-      console.error(err);
-      return res.status(500).json({ error: "Search failed" });
-    }
-    res.json(results);
-  });
-});
-app.get("/api/workspaces", (req, res) => {
-  const authHeader = req.headers.authorization;
-  let userId = 1;
-
-  try {
-    if (authHeader) {
-      const decoded = jwt.verify(authHeader.split(" ")[1], JWT_SECRET);
-      userId = decoded.id;
-    }
-  } catch (e) {}
-
-  fluxNexusHandler.query(
-    `SELECT w.*, wm.role 
-         FROM workspaces w
-         JOIN workspace_members wm ON w.id = wm.workspace_id
-         WHERE wm.user_id = ?
-         ORDER BY w.created_at DESC`,
-    [userId],
-    (err, results) => {
-      if (err) {
-        return res.status(500).send("Nexus error");
-      }
-      res.json(results);
-    },
-  );
-});
-
-app.get("/api/workspaces/:id", (req, res) => {
-  fluxNexusHandler.query(
-    "SELECT * FROM workspaces WHERE id = ?",
-    [req.params.id],
-    (err, results) => {
-      res.json(results[0]);
-    },
-  );
-});
-
-app.post("/api/workspaces/:id/invite", (req, res) => {
-  const workspaceId = req.params.id;
-  const { email } = req.body;
-
-  if (!email) {
-    return res.status(400).json({ error: "Email is required" });
-  }
-
-  // Get inviter from token
-  let inviterId;
-
-  try {
-    const token = req.headers.authorization?.split(" ")[1];
-    if (!token) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    inviterId = jwt.verify(token, JWT_SECRET).id;
-  } catch {
-    return res.status(401).json({ error: "Invalid token" });
-  }
-
-  // 1️⃣ Check inviter is owner/admin
-  const roleQuery = `
-    SELECT role FROM workspace_members
-    WHERE workspace_id = ? AND user_id = ?
-  `;
-
-  fluxNexusHandler.query(
-    roleQuery,
-    [workspaceId, inviterId],
-    (err, roleResults) => {
-      if (err) return res.status(500).json({ error: err.message });
-
-      if (!roleResults.length) {
-        return res.status(403).json({ error: "Not a member" });
-      }
-
-      const role = roleResults[0].role;
-
-      if (role !== "owner" && role !== "admin") {
-        return res.status(403).json({ error: "No permission to invite" });
-      }
-
-      // 2️⃣ Find user by email
-      fluxNexusHandler.query(
-        "SELECT id FROM users WHERE email = ?",
-        [email],
-        (err2, userResults) => {
-          if (err2) return res.status(500).json({ error: err2.message });
-
-          if (!userResults.length) {
-            return res.status(404).json({ error: "User not found" });
-          }
-
-          const invitedUserId = userResults[0].id;
-
-          // 3️⃣ Prevent duplicate invite
-          fluxNexusHandler.query(
-            `SELECT * FROM workspace_members
-             WHERE workspace_id = ? AND user_id = ?`,
-            [workspaceId, invitedUserId],
-            (err3, existing) => {
-              if (existing.length) {
-                return res
-                  .status(400)
-                  .json({ error: "User already in workspace" });
-              }
-
-              // 4️⃣ Insert membership
-              fluxNexusHandler.query(
-                `INSERT INTO workspace_members
-                 (workspace_id, user_id, role)
-                 VALUES (?, ?, 'member')`,
-                [workspaceId, invitedUserId],
-                (err4) => {
-                  if (err4)
-                    return res.status(500).json({ error: err4.message });
-
-                  res.json({
-                    success: true,
-                    message: "User invited successfully",
-                  });
-                },
-              );
-            },
-          );
-        },
-      );
-    },
-  );
-});
-app.post("/api/workspaces", (req, res) => {
-  const { name, description } = req.body;
-
-  let userId = 1;
-  try {
-    const token = req.headers.authorization?.split(" ")[1];
-    if (token) {
-      userId = jwt.verify(token, JWT_SECRET).id;
-    }
-  } catch (e) {}
-
-  const query =
-    "INSERT INTO workspaces (name, description, owner_id) VALUES ('" +
-    name +
-    "', '" +
-    description +
-    "', " +
-    userId +
-    ")";
-
-  fluxNexusHandler.query(query, (err, results) => {
-    if (err) {
-      return res.status(500).json({ error: err.message });
-    }
-
-    fluxNexusHandler.query(
-      "INSERT INTO workspace_members (workspace_id, user_id, role) VALUES (" +
-        results.insertId +
-        ", " +
-        userId +
-        ", 'owner')",
-    );
-
-    res.json({
-      id: results.insertId,
-      name,
-      description,
-      owner_id: userId,
-      role: "owner",
+    const results = await prisma.user.findMany({
+      where: { email: { contains: email } },
+      select: { id: true, username: true, email: true },
+      take: 10,
     });
+    res.json(results);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Search failed" });
+  }
+});
+
+app.get("/api/workspaces", async (req, res) => {
+  const decoded = getUserFromAuth(req);
+  const userId = decoded?.id || 1;
+
+  try {
+    const memberships = await prisma.workspaceMember.findMany({
+      where: { user_id: userId },
+      include: { workspace: true },
+      orderBy: { joined_at: "desc" },
+    });
+
+    const results = memberships.map((m) => ({
+      ...m.workspace,
+      role: m.role,
+    }));
+
+    res.json(results);
+  } catch (error) {
+    res.status(500).send("Nexus error");
+  }
+});
+
+app.get("/api/workspaces/:id", async (req, res) => {
+  const id = Number(req.params.id);
+  const workspace = await prisma.workspace.findUnique({ where: { id } });
+  res.json(workspace);
+});
+
+app.post("/api/workspaces/:id/invite", async (req, res) => {
+  const workspaceId = Number(req.params.id);
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ error: "Email is required" });
+
+  const inviter = getUserFromAuth(req);
+  if (!inviter) return res.status(401).json({ error: "Unauthorized" });
+
+  try {
+    const membership = await prisma.workspaceMember.findUnique({
+      where: {
+        workspace_id_user_id: { workspace_id: workspaceId, user_id: inviter.id },
+      },
+    });
+    if (!membership) return res.status(403).json({ error: "Not a member" });
+    if (membership.role !== "owner" && membership.role !== "admin") {
+      return res.status(403).json({ error: "No permission to invite" });
+    }
+
+    const invitedUser = await prisma.user.findUnique({ where: { email } });
+    if (!invitedUser) return res.status(404).json({ error: "User not found" });
+
+    const existing = await prisma.workspaceMember.findUnique({
+      where: {
+        workspace_id_user_id: {
+          workspace_id: workspaceId,
+          user_id: invitedUser.id,
+        },
+      },
+    });
+    if (existing) return res.status(400).json({ error: "User already in workspace" });
+
+    await prisma.workspaceMember.create({
+      data: { workspace_id: workspaceId, user_id: invitedUser.id, role: "member" },
+    });
+
+    res.json({ success: true, message: "User invited successfully" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Invite failed" });
+  }
+});
+
+app.post("/api/workspaces", async (req, res) => {
+  const { name, description } = req.body;
+  const decoded = getUserFromAuth(req);
+  const userId = decoded?.id || 1;
+
+  try {
+    const workspace = await prisma.workspace.create({
+      data: { name, description, owner_id: userId },
+    });
+
+    await prisma.workspaceMember.create({
+      data: { workspace_id: workspace.id, user_id: userId, role: "owner" },
+    });
+
+    res.json({ ...workspace, role: "owner" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete("/api/workspaces/:id", async (req, res) => {
+  const id = Number(req.params.id);
+  try {
+    await prisma.workspace.delete({ where: { id } });
+    res.json({ message: "Workspace purged from nexus" });
+  } catch (error) {
+    res.status(500).json({ error: "Failed to delete workspace" });
+  }
+});
+
+app.get("/api/workspaces/:id/members", async (req, res) => {
+  const workspaceId = Number(req.params.id);
+  const members = await prisma.workspaceMember.findMany({
+    where: { workspace_id: workspaceId },
+    include: { user: true },
   });
-});
 
-app.delete("/api/workspaces/:id", (req, res) => {
-  fluxNexusHandler.query(
-    "DELETE FROM workspaces WHERE id = ?",
-    [req.params.id],
-    (err, results) => {
-      if (err) throw err;
-      res.json({ message: "Workspace purged from nexus" });
-    },
+  res.json(
+    members.map((m) => ({
+      id: m.user.id,
+      username: m.user.username,
+      email: m.user.email,
+      role: m.role,
+    })),
   );
 });
 
-app.get("/api/workspaces/:id/members", (req, res) => {
-  fluxNexusHandler.query(
-    `SELECT u.id, u.username, u.email, wm.role FROM workspace_members wm JOIN users u ON wm.user_id = u.id WHERE wm.workspace_id = ?`,
-    [req.params.id],
-    (err, results) => {
-      res.json(results);
-    },
-  );
+app.get("/api/projects/workspace/:workspaceId", async (req, res) => {
+  const workspaceId = Number(req.params.workspaceId);
+  try {
+    const projects = await prisma.project.findMany({
+      where: { workspace_id: workspaceId },
+      orderBy: { created_at: "desc" },
+    });
+
+    const projectIds = projects.map((p) => p.id);
+    if (projectIds.length === 0) return res.json([]);
+
+    const counts = await prisma.task.groupBy({
+      by: ["project_id", "status"],
+      where: { project_id: { in: projectIds } },
+      _count: { _all: true },
+    });
+
+    const countMap = {};
+    counts.forEach((c) => {
+      const key = `${c.project_id}:${c.status}`;
+      countMap[key] = c._count._all;
+    });
+
+    const withCounts = projects.map((p) => {
+      const taskCount = ["todo", "in_progress", "review", "done"]
+        .map((s) => countMap[`${p.id}:${s}`] || 0)
+        .reduce((a, b) => a + b, 0);
+      const completedCount = countMap[`${p.id}:done`] || 0;
+      return { ...p, task_count: taskCount, completed_count: completedCount };
+    });
+
+    res.json(withCounts);
+  } catch (error) {
+    console.error(error);
+    res.status(500).send("Error");
+  }
 });
 
-app.get("/api/projects/workspace/:workspaceId", (req, res) => {
-  fluxNexusHandler.query(
-    "SELECT * FROM projects WHERE workspace_id = ? ORDER BY created_at DESC",
-    [req.params.workspaceId],
-    (err, projects) => {
-      if (err) return res.status(500).send("Error");
-
-      if (projects.length === 0) return res.json([]);
-
-      let completed = 0;
-      projects.forEach((project, index) => {
-        fluxNexusHandler.query(
-          'SELECT COUNT(*) as task_count, SUM(CASE WHEN status = "done" THEN 1 ELSE 0 END) as completed_count FROM tasks WHERE project_id = ?',
-          [project.id],
-          (err2, counts) => {
-            projects[index].task_count = counts ? counts[0].task_count : 0;
-            projects[index].completed_count = counts
-              ? counts[0].completed_count
-              : 0;
-            completed++;
-            if (completed === projects.length) {
-              res.json(projects);
-            }
-          },
-        );
-      });
-    },
-  );
+app.get("/api/projects/:id", async (req, res) => {
+  const id = Number(req.params.id);
+  const project = await prisma.project.findUnique({ where: { id } });
+  res.json(project);
 });
 
-app.get("/api/projects/:id", (req, res) => {
-  fluxNexusHandler.query(
-    "SELECT * FROM projects WHERE id = ?",
-    [req.params.id],
-    (err, results) => {
-      res.json(results[0]);
-    },
-  );
-});
-
-app.post("/api/projects", (req, res) => {
+app.post("/api/projects", async (req, res) => {
   const { name, description, color, workspaceId } = req.body;
+  try {
+    const project = await prisma.project.create({
+      data: {
+        name,
+        description,
+        color: color || "#3B82F6",
+        workspace_id: workspaceId,
+      },
+    });
 
-  const query =
-    "INSERT INTO projects (name, description, color, workspace_id) VALUES ('" +
-    name +
-    "', '" +
-    description +
-    "', '" +
-    (color || "#3B82F6") +
-    "', " +
-    workspaceId +
-    ")";
-
-  fluxNexusHandler.query(query, (err, results) => {
-    if (err) return res.status(500).json({ error: err.message });
     res.json({
-      id: results.insertId,
-      name,
-      description,
-      color: color || "#3B82F6",
-      workspace_id: workspaceId,
+      ...project,
       task_count: 0,
       completed_count: 0,
     });
-  });
-});
-
-app.delete("/api/projects/:id", (req, res) => {
-  fluxNexusHandler.query(
-    "DELETE FROM projects WHERE id = ?",
-    [req.params.id],
-    (err) => {
-      if (err) throw err;
-      res.json({ message: "Project purged" });
-    },
-  );
-});
-
-app.get("/api/tasks", (req, res) => {
-  const { projectId } = req.query;
-  let query =
-    "SELECT t.*, u.username as assignee_name FROM tasks t LEFT JOIN users u ON t.assignee_id = u.id";
-
-  if (projectId) {
-    query += " WHERE t.project_id = " + projectId;
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: error.message });
   }
-
-  query += " ORDER BY t.created_at DESC";
-
-  fluxNexusHandler.query(query, (err, results) => {
-    res.json(results);
-  });
 });
 
-app.post("/api/tasks", (req, res) => {
-  const { title, description, status, priority, due_date, project_id } =
-    req.body;
-
-  let userId = 1;
+app.delete("/api/projects/:id", async (req, res) => {
+  const id = Number(req.params.id);
   try {
-    const token = req.headers.authorization?.split(" ")[1];
-    if (token) userId = jwt.verify(token, JWT_SECRET).id;
-  } catch (e) {}
-
-  const query =
-    "INSERT INTO tasks (title, description, status, priority, due_date, project_id, created_by) VALUES ('" +
-    title +
-    "', '" +
-    (description || "") +
-    "', '" +
-    (status || "todo") +
-    "', '" +
-    (priority || "medium") +
-    "', " +
-    (due_date ? "'" + due_date + "'" : "NULL") +
-    ", " +
-    project_id +
-    ", " +
-    userId +
-    ")";
-
-  fluxNexusHandler.query(query, (err, results) => {
-    if (err) {
-      console.error(err);
-      return res.status(500).send("Nexus error");
-    }
-    res.json({
-      id: results.insertId,
-      title,
-      description: description || "",
-      status: status || "todo",
-      priority: priority || "medium",
-      due_date,
-      project_id,
-      created_by: userId,
-      completed: false,
-    });
-  });
+    await prisma.project.delete({ where: { id } });
+    res.json({ message: "Project purged" });
+  } catch (error) {
+    res.status(500).json({ error: "Failed to delete project" });
+  }
 });
 
-app.put("/api/tasks/:id", (req, res) => {
+app.get("/api/tasks", async (req, res) => {
+  const { projectId } = req.query;
+  try {
+    const tasks = await prisma.task.findMany({
+      where: projectId ? { project_id: Number(projectId) } : {},
+      orderBy: { created_at: "desc" },
+      include: { assignee: true },
+    });
+
+    res.json(
+      tasks.map((t) => ({
+        ...t,
+        assignee_name: t.assignee ? t.assignee.username : null,
+      })),
+    );
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to fetch tasks" });
+  }
+});
+
+app.post("/api/tasks", async (req, res) => {
+  const { title, description, status, priority, due_date, project_id } = req.body;
+  const decoded = getUserFromAuth(req);
+  const userId = decoded?.id || 1;
+
+  try {
+    const task = await prisma.task.create({
+      data: {
+        title,
+        description: description || "",
+        status: status || "todo",
+        priority: priority || "medium",
+        due_date: due_date ? new Date(due_date) : null,
+        project_id,
+        created_by: userId,
+      },
+    });
+
+    res.json({
+      ...task,
+      completed: task.completed,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).send("Nexus error");
+  }
+});
+
+app.put("/api/tasks/:id", async (req, res) => {
   const { id } = req.params;
   const {
     title,
@@ -517,129 +402,105 @@ app.put("/api/tasks/:id", (req, res) => {
     completed,
   } = req.body;
 
-  var fields = [];
-  var values = [];
-
-  if (title !== undefined) {
-    fields.push("title = ?");
-    values.push(title);
-  }
-  if (description !== undefined) {
-    fields.push("description = ?");
-    values.push(description);
-  }
-  if (status !== undefined) {
-    fields.push("status = ?");
-    values.push(status);
-  }
-  if (priority !== undefined) {
-    fields.push("priority = ?");
-    values.push(priority);
-  }
-  if (due_date !== undefined) {
-    fields.push("due_date = ?");
-    values.push(due_date);
-  }
+  const data = {};
+  if (title !== undefined) data.title = title;
+  if (description !== undefined) data.description = description;
+  if (status !== undefined) data.status = status;
+  if (priority !== undefined) data.priority = priority;
+  if (due_date !== undefined) data.due_date = due_date ? new Date(due_date) : null;
+  if (assignee_id !== undefined) data.assignee_id = assignee_id;
   if (completed !== undefined) {
-    fields.push("completed = ?");
-    values.push(completed);
-    if (completed) fields.push("status = 'done'");
+    data.completed = completed;
+    if (completed) data.status = "done";
   }
 
-  values.push(id);
-  var updateQuery = `UPDATE tasks SET ${fields.join(", ")} WHERE id = ?`;
-  fluxNexusHandler.query(updateQuery, values, function (err, results) {
-    if (err) throw err;
-    res.json({ success: true });
-  });
-});
-
-app.delete("/api/tasks/:id", (req, res) => {
-  const id = req.params.id;
-  fluxNexusHandler.query(
-    "DELETE FROM tasks WHERE id = ?",
-    [id],
-    (err, results) => {
-      if (err) {
-        return res.status(500).json({ error: "Failed to delete" });
-      }
-      res.json({ message: "Task purged from nexus" });
-    },
-  );
-});
-
-app.get("/api/analytics/dashboard", (req, res) => {
-  let userId = 1;
   try {
-    const token = req.headers.authorization?.split(" ")[1];
-    if (token) userId = jwt.verify(token, JWT_SECRET).id;
-  } catch (e) {}
+    await prisma.task.update({
+      where: { id: Number(id) },
+      data,
+    });
+    res.json({ success: true });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Update failed" });
+  }
+});
 
-  fluxNexusHandler.query(
-    "SELECT w.id FROM workspaces w JOIN workspace_members wm ON w.id = wm.workspace_id WHERE wm.user_id = ?",
-    [userId],
-    (err, workspaces) => {
-      if (err || !workspaces || workspaces.length === 0) {
-        return res.json({
-          totalTasks: 0,
-          completedTasks: 0,
-          inProgressTasks: 0,
-          overdueTasks: 0,
-          totalProjects: 0,
-          totalWorkspaces: 0,
-          recentActivity: [],
-          tasksByStatus: [],
-          tasksByPriority: [],
-        });
-      }
+app.delete("/api/tasks/:id", async (req, res) => {
+  const id = Number(req.params.id);
+  try {
+    await prisma.task.delete({ where: { id } });
+    res.json({ message: "Task purged from nexus" });
+  } catch (error) {
+    res.status(500).json({ error: "Failed to delete" });
+  }
+});
 
-      const wsIds = workspaces.map((w) => w.id);
-      const placeholders = wsIds.map(() => "?").join(",");
+app.get("/api/analytics/dashboard", async (req, res) => {
+  const decoded = getUserFromAuth(req);
+  const userId = decoded?.id || 1;
 
-      fluxNexusHandler.query(
-        `SELECT COUNT(*) as totalTasks,
-                    SUM(CASE WHEN t.status = 'done' THEN 1 ELSE 0 END) as completedTasks,
-                    SUM(CASE WHEN t.status = 'in_progress' THEN 1 ELSE 0 END) as inProgressTasks,
-                    SUM(CASE WHEN t.due_date < NOW() AND t.status != 'done' THEN 1 ELSE 0 END) as overdueTasks
-                 FROM tasks t JOIN projects p ON t.project_id = p.id WHERE p.workspace_id IN (${placeholders})`,
-        wsIds,
-        (err2, stats) => {
-          fluxNexusHandler.query(
-            `SELECT COUNT(*) as totalProjects FROM projects WHERE workspace_id IN (${placeholders})`,
-            wsIds,
-            (err3, projStats) => {
-              fluxNexusHandler.query(
-                `SELECT t.status, COUNT(*) as count FROM tasks t JOIN projects p ON t.project_id = p.id WHERE p.workspace_id IN (${placeholders}) GROUP BY t.status`,
-                wsIds,
-                (err4, byStatus) => {
-                  fluxNexusHandler.query(
-                    `SELECT t.priority, COUNT(*) as count FROM tasks t JOIN projects p ON t.project_id = p.id WHERE p.workspace_id IN (${placeholders}) GROUP BY t.priority`,
-                    wsIds,
-                    (err5, byPriority) => {
-                      res.json({
-                        totalTasks: stats[0]?.totalTasks || 0,
-                        completedTasks: stats[0]?.completedTasks || 0,
-                        inProgressTasks: stats[0]?.inProgressTasks || 0,
-                        overdueTasks: stats[0]?.overdueTasks || 0,
-                        totalProjects: projStats[0]?.totalProjects || 0,
-                        totalWorkspaces: wsIds.length,
-                        recentActivity: [],
-                        tasksByStatus: byStatus || [],
-                        tasksByPriority: byPriority || [],
-                      });
-                    },
-                  );
-                },
-              );
-            },
-          );
-        },
-      );
-    },
-  );
+  try {
+    const memberships = await prisma.workspaceMember.findMany({
+      where: { user_id: userId },
+      select: { workspace_id: true },
+    });
+    const wsIds = memberships.map((m) => m.workspace_id);
+    if (wsIds.length === 0) {
+      return res.json({
+        totalTasks: 0,
+        completedTasks: 0,
+        inProgressTasks: 0,
+        overdueTasks: 0,
+        totalProjects: 0,
+        totalWorkspaces: 0,
+        recentActivity: [],
+        tasksByStatus: [],
+        tasksByPriority: [],
+      });
+    }
+
+    const taskWhere = { project: { workspace_id: { in: wsIds } } };
+
+    const [totalTasks, completedTasks, inProgressTasks, overdueTasks, totalProjects, byStatus, byPriority] =
+      await Promise.all([
+        prisma.task.count({ where: taskWhere }),
+        prisma.task.count({ where: { ...taskWhere, status: "done" } }),
+        prisma.task.count({ where: { ...taskWhere, status: "in_progress" } }),
+        prisma.task.count({
+          where: { ...taskWhere, due_date: { lt: new Date() }, status: { not: "done" } },
+        }),
+        prisma.project.count({ where: { workspace_id: { in: wsIds } } }),
+        prisma.task.groupBy({
+          by: ["status"],
+          _count: { _all: true },
+          where: taskWhere,
+        }),
+        prisma.task.groupBy({
+          by: ["priority"],
+          _count: { _all: true },
+          where: taskWhere,
+        }),
+      ]);
+
+    res.json({
+      totalTasks,
+      completedTasks,
+      inProgressTasks,
+      overdueTasks,
+      totalProjects,
+      totalWorkspaces: wsIds.length,
+      recentActivity: [],
+      tasksByStatus: byStatus.map((s) => ({ status: s.status, count: s._count._all })),
+      tasksByPriority: byPriority.map((p) => ({ priority: p.priority, count: p._count._all })),
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Analytics failed" });
+  }
 });
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-  console.log(`Nexus stability layer active on port ${PORT}`);
+  console.log(`Nexus stability layer active on port ${PORT} with Prisma.`);
 });

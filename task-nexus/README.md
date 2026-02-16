@@ -44,35 +44,32 @@ A full-stack task management application built with **React**, **Vite**, **Node.
 ### Prerequisites
 
 - **Node.js** v16 or higher
-- **MySQL** (via XAMPP, WAMP, or standalone)
+- A hosted **PostgreSQL** database (Railway, Supabase, Neon, etc.) or local Postgres
 
 ### 1. Database
 
-1. Start your MySQL server.
-2. Import the schema to create the database and tables:
-   ```bash
-   mysql -u root -p < database.sql
-   ```
+Provision a Postgres database and grab its connection string, e.g.:
+`postgresql://user:password@host:5432/task_nexus?schema=public`
 
 ### 2. Environment
 
 Create a `.env` file in the `server/` directory:
 
 ```env
-DB_HOST=localhost
-DB_USER=root
-DB_PASSWORD=
-DB_NAME=task_nexus
+DATABASE_URL="postgresql://user:password@host:5432/task_nexus?schema=public"
 PORT=5000
+JWT_SECRET=change-me
 ```
 
-Adjust credentials to match your local MySQL setup.
+Prisma uses `DATABASE_URL` for all queries. If your provider requires SSL, append `&sslmode=require` to the URL.
 
 ### 3. Backend
 
 ```bash
 cd server
 npm install
+npx prisma generate
+npx prisma db push         # creates/updates tables from Prisma schema
 npm start
 ```
 
@@ -95,6 +92,6 @@ The client runs on **http://localhost:3000**
 | Layer | Technology |
 | :--- | :--- |
 | Frontend | React 18, Vite, Axios, React Router, Lucide Icons |
-| Backend | Node.js, Express, MySQL2, JSON Web Tokens |
-| Database | MySQL with relational schema |
+| Backend | Node.js, Express, Prisma, JSON Web Tokens |
+| Database | PostgreSQL (via Prisma) |
 | Styling | Vanilla CSS with glassmorphism design |
